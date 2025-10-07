@@ -19,7 +19,7 @@ API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 # 固定搜索的消息数量
-FIXED_SEARCH_LIMIT = 5000
+FIXED_SEARCH_LIMIT = 500000
 # 分页设置
 PAGE_SIZE = 10
 
@@ -28,7 +28,7 @@ user_sessions = {}
 
 # --- 客户端设置 ---
 PROXY_IP = os.getenv('PROXY_IP', '127.0.0.1')
-PROXY_PORT = int(os.getenv('PROXY_PORT', 10808))
+PROXY_PORT = int(os.getenv('PROXY_PORT', 20170))
 PROXY_ENABLED = os.getenv('PROXY_ENABLED', 'true').lower() == 'true'
 proxy_config = (socks.SOCKS5, PROXY_IP, PROXY_PORT) if PROXY_ENABLED else None
 
@@ -115,7 +115,7 @@ async def process_channel_request(event, user_input):
 
         messages_with_reactions = []
         processed_count = 0
-        BATCH_SIZE = 100
+        BATCH_SIZE = 3000
 
         async for message in user_client.iter_messages(target_channel, limit=messages_to_scan):
             processed_count += 1
