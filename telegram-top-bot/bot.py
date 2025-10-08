@@ -19,6 +19,7 @@ API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 PORXY_PORT = os.getenv('PORXY_PORT')
 
+TOP_N = 50
 
 # 固定搜索的消息数量
 FIXED_SEARCH_LIMIT = 500000
@@ -58,7 +59,7 @@ def format_page(chat_id):
 
     text = (
         f"**频道 `{display_name}` Reaction Top 榜单**\n"
-        f"*(在扫描的 {session['limit']} 条消息中，共找到 {total_found} 条带 reaction 的消息)*\n\n"
+        f"*(在扫描的 {session['limit']} 条消息中，排名前 {total_found} 条带 reaction 的消息)*\n\n"
         f"--- **第 {current_page + 1} / {total_pages} 页** ---\n\n"
     )
 
@@ -141,7 +142,7 @@ async def process_channel_request(event, user_input):
             await event.respond(f"在扫描的 **{messages_to_scan}** 条消息中，没有找到任何带有 reaction 的消息。")
             return
 
-        sorted_list = sorted(messages_with_reactions, key=lambda item: item[0], reverse=True)
+        sorted_list = sorted(messages_with_reactions, key=lambda item: item[0], reverse=True)[:TOP_N]
 
         user_sessions[event.chat_id] = {
             'sorted_list': sorted_list,
