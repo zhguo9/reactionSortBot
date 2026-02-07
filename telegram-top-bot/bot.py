@@ -8,9 +8,17 @@ from telethon import TelegramClient, events
 from telethon.tl.types import Channel
 from telethon.tl.custom import Button
 from telethon.errors.rpcerrorlist import UsernameNotOccupiedError, ChatAdminRequiredError, MessageNotModifiedError
+from telethon.sessions import StringSession
 
 # --- 配置 ---
-logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler('bot.log'),  # 日志输出到文件
+        logging.StreamHandler()  # 同时输出到控制台
+    ]
+)
 
 load_dotenv()
 
@@ -18,6 +26,10 @@ API_ID = int(os.getenv('API_ID'))
 API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 PORXY_PORT = os.getenv('PORXY_PORT')
+
+# 新增：从环境变量读取手机号和会话字符串
+PHONE_NUMBER = os.getenv('PHONE_NUMBER')  # 格式：+8613800138000
+USER_SESSION_STRING = os.getenv('USER_SESSION_STRING', '')  # 可选：已有的会话字符串
 
 TOP_N = 50
 
@@ -35,12 +47,18 @@ PROXY_PORT = int(os.getenv('PROXY_PORT', PORXY_PORT))
 PROXY_ENABLED = os.getenv('PROXY_ENABLED', 'true').lower() == 'true'
 proxy_config = (socks.SOCKS5, PROXY_IP, PROXY_PORT) if PROXY_ENABLED else None
 
-# --- 客户端定义 ---
+# --- 客户端定义（使用 StringSession 支持无文件运行）---
 bot_client = TelegramClient('my_top_bot_session', API_ID, API_HASH, proxy=proxy_config)
-user_client = TelegramClient('user_session_for_bot', API_ID, API_HASH, proxy=proxy_config)
+
+# 如果有现成的会话字符串就用，否则用空字符串（首次登录后会生成）
+if USER_SESSION_STRING:
+    user_client = TelegramClient(StringSession(USER_SESSION_STRING), API_ID, API_HASH, proxy=proxy_config)
+else:
+    # 首次运行：使用文件会话，登录后会提示保存 session string
+    user_client = TelegramClient('user_session_for_bot', API_ID, API_HASH, proxy=proxy_config)
 
 
-# --- 辅助函数：格式化页面内容和按钮 (无需修改) ---
+# --- 辅助函数：格式化页面内容和按钮 ---
 def format_page(chat_id):
     session = user_sessions.get(chat_id)
     if not session:
@@ -82,7 +100,7 @@ def format_page(chat_id):
     return text, [buttons_row] if buttons_row else []
 
 
-# --- 核心逻辑：处理频道请求 (新函数) ---
+# --- 核心逻辑：处理频道请求 ---
 async def process_channel_request(event, user_input):
     """
     封装了查找、扫描和返回频道top榜单的核心逻辑。
@@ -168,7 +186,7 @@ async def process_channel_request(event, user_input):
         await processing_message.edit(f"❌ **在扫描过程中出错了！**\n\n**错误详情:**\n`{e}`")
 
 
-# --- 事件处理器：处理所有私聊消息 (核心修改) ---
+# --- 事件处理器：处理所有私聊消息 ---
 @bot_client.on(events.NewMessage(func=lambda e: e.is_private))
 async def message_handler(event):
     """
@@ -200,10 +218,9 @@ async def message_handler(event):
     # 如果确定了有效输入，则调用处理函数
     if user_input:
         await process_channel_request(event, user_input)
-    # 否则，可以忽略该消息或发送帮助信息（当前选择忽略）
 
 
-# --- 事件处理器：处理按钮点击（回调查询） (无需修改) ---
+# --- 事件处理器：处理按钮点击（回调查询）---
 @bot_client.on(events.CallbackQuery())
 async def button_click_handler(event):
     chat_id = event.chat_id
@@ -238,17 +255,41 @@ async def button_click_handler(event):
         await event.answer()
 
 
-# --- 启动机器人 (无需修改) ---
+# --- 启动机器人 ---
 async def main():
     """主函数，同时启动并运行两个客户端"""
     try:
-        await user_client.start()
-        user_info = await user_client.get_me()
-        logging.info(f"用户客户端 @{user_info.username} 已成功登录，用于数据抓取。")
+        # 启动用户客户端（自动登录）
+        if not USER_SESSION_STRING:
+            # 首次登录：需要手机号
+            if not PHONE_NUMBER:
+                logging.error("错误：未在 .env 中设置 PHONE_NUMBER，无法自动登录用户账户。")
+                logging.error("请在 .env 中添加: PHONE_NUMBER=+8613800138000")
+                return
 
+            logging.info(f"首次登录，使用手机号: {PHONE_NUMBER}")
+            await user_client.start(phone=PHONE_NUMBER)
+
+            # 登录成功后，保存 session string 供下次使用
+            session_string = user_client.session.save()
+            logging.info("=" * 60)
+            logging.info("用户账户登录成功！请将以下 SESSION STRING 保存到 .env 文件中：")
+            logging.info(f"USER_SESSION_STRING={session_string}")
+            logging.info("=" * 60)
+            logging.info("下次启动时将自动使用此 session，无需再次验证。")
+        else:
+            # 使用已有的 session string 登录
+            logging.info("使用已保存的 session string 登录...")
+            await user_client.start()
+
+        user_info = await user_client.get_me()
+        logging.info(f"用户客户端 @{user_info.username or user_info.phone} 已成功登录，用于数据抓取。")
+
+        # 启动机器人客户端
         await bot_client.start(bot_token=BOT_TOKEN)
         bot_info = await bot_client.get_me()
         logging.info(f"机器人 @{bot_info.username} 已成功启动并正在监听命令...")
+        logging.info("Bot 正在后台运行，可以安全地关闭终端（如使用 screen/tmux/nohup）")
 
         await bot_client.run_until_disconnected()
 
